@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const maxDuration = 60;
+
 /**
  * OSIRIS — Global Stats API
  * Lightweight aggregation endpoint.
@@ -19,12 +21,12 @@ export async function GET(req: Request) {
 
     // Fetch all internal APIs in parallel (they have their own Cache-Control TTLs)
     const [flightsRes, satsRes, cctvRes, weatherRes, infraRes, gdeltRes] = await Promise.allSettled([
-      fetch(`${origin}/api/flights`, { next: { revalidate: 45 } }),
-      fetch(`${origin}/api/satellites`, { next: { revalidate: 3600 } }),
-      fetch(`${origin}/api/cctv`, { next: { revalidate: 3600 } }),
-      fetch(`${origin}/api/weather`, { next: { revalidate: 300 } }),
-      fetch(`${origin}/api/infrastructure`, { next: { revalidate: 86400 } }),
-      fetch(`${origin}/api/gdelt`, { next: { revalidate: 300 } })
+      fetch(`${origin}/api/flights`, { signal: AbortSignal.timeout(20000), next: { revalidate: 45 } }),
+      fetch(`${origin}/api/satellites`, { signal: AbortSignal.timeout(20000), next: { revalidate: 3600 } }),
+      fetch(`${origin}/api/cctv`, { signal: AbortSignal.timeout(20000), next: { revalidate: 3600 } }),
+      fetch(`${origin}/api/weather`, { signal: AbortSignal.timeout(20000), next: { revalidate: 300 } }),
+      fetch(`${origin}/api/infrastructure`, { signal: AbortSignal.timeout(20000), next: { revalidate: 86400 } }),
+      fetch(`${origin}/api/gdelt`, { signal: AbortSignal.timeout(20000), next: { revalidate: 300 } })
     ]);
 
     let flights = 0;
@@ -55,7 +57,7 @@ export async function GET(req: Request) {
 
     if (weatherRes.status === 'fulfilled' && weatherRes.value.ok) {
       const data = await weatherRes.value.json();
-      weather = data.weather_events?.length || 0;
+      weather = data.events?.length || 0;
     }
 
     if (infraRes.status === 'fulfilled' && infraRes.value.ok) {
@@ -65,7 +67,7 @@ export async function GET(req: Request) {
 
     if (gdeltRes.status === 'fulfilled' && gdeltRes.value.ok) {
         const data = await gdeltRes.value.json();
-        incidents = data.gdelt?.length || 0;
+        incidents = data.events?.length || 0;
     }
 
     return NextResponse.json({

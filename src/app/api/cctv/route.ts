@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { stealthFetch } from '@/lib/stealthFetch';
+
+export const maxDuration = 60;
 import { fetchAsfinagCameras } from './asfinag';
 import { fetchBulgariaCameras } from './bulgaria';
 import { fetchGreeceCameras } from './greece';
@@ -17,6 +19,21 @@ import { fetchSpainCameras } from './spain';
 import { fetchPolandCameras } from './poland';
 import { fetchJapanCameras } from './japan';
 import { fetchSwitzerlandCameras } from './switzerland';
+import { fetchFinlandCameras } from './finland';
+import { fetchHongKongCameras } from './hongkong';
+import { fetchUtahCameras } from './utah';
+import { fetchIcelandCameras } from './iceland';
+import { fetchTaiwanCameras } from './taiwan';
+import { fetchThailandCameras } from './thailand';
+import { fetchAsiaLiveCameras } from './asia-live';
+import { fetchNewZealandCameras } from './newzealand';
+import { fetchOregonCameras } from './oregon';
+import { fetchMichiganCameras } from './michigan';
+import {
+  fetchLatamLiveCameras,
+  fetchAfricaLiveCameras,
+  fetchEuropeLiveCameras,
+} from './world-live';
 
 /**
  * OSIRIS — Worldwide CCTV Camera API v2
@@ -60,24 +77,34 @@ async function fetchWSDOTCameras(): Promise<any[]> {
   } catch (e) { return []; }
 }
 
-// ── US-WEST: Caltrans California Districts ──
+// ── US-WEST: Caltrans California ──
 async function fetchCaltransCameras(): Promise<any[]> {
-  const dists = ['d03', 'd04', 'd05', 'd06', 'd07', 'd08', 'd10', 'd11', 'd12'];
-  const results = await Promise.allSettled(dists.map(async (dist) => {
-    const res = await fetch(`https://cwwp2.dot.ca.gov/data/${dist}/cctv/cctvStatus${dist.toUpperCase()}.json`, { signal: AbortSignal.timeout(8000), cache: 'no-store' });
+  try {
+    const res = await stealthFetch('https://caltrans-gis.dot.ca.gov/arcgis/rest/services/CHhighway/CCTV/FeatureServer/0/query?where=1%3D1&outFields=*&f=json', { signal: AbortSignal.timeout(12000) });
     if (!res.ok) return [];
     const data = await res.json();
-    const distCams = [];
-    for (const cam of (data?.data || [])) {
-      const lat = parseFloat(cam.cctv?.location?.latitude || cam.location?.latitude);
-      const lng = parseFloat(cam.cctv?.location?.longitude || cam.location?.longitude);
-      const url = cam.cctv?.imageData?.static?.currentImageURL;
+    const cams = [];
+    for (const feature of (data?.features || [])) {
+      const p = feature.attributes;
+      const lat = p.latitude;
+      const lng = p.longitude;
+      const url = p.currentImageURL;
       if (!lat || !lng || !url) continue;
-      distCams.push({ id: `cal-${Math.random().toString(36).substr(2,9)}`, lat, lng, name: cam.cctv?.location?.locationName || cam.location?.locationName || 'Caltrans', city: 'California', country: 'US', feed_url: url, source: 'Caltrans' });
+      cams.push({
+        id: `cal-${p.OBJECTID}`,
+        lat,
+        lng,
+        name: p.locationName || 'Caltrans',
+        city: p.nearbyPlace || p.county || 'California',
+        country: 'US',
+        feed_url: url,
+        source: 'Caltrans'
+      });
     }
-    return distCams;
-  }));
-  return results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+    return cams;
+  } catch (e) {
+    return [];
+  }
 }
 
 // ── CANADA: Ottawa, Toronto, Montreal, Quebec ──
@@ -419,6 +446,19 @@ const REGION_FETCHERS: Record<string, () => Promise<any[]>> = {
   'poland': fetchPolandCameras,
   'japan': fetchJapanCameras,
   'switzerland': fetchSwitzerlandCameras,
+  'finland': fetchFinlandCameras,
+  'hongkong': fetchHongKongCameras,
+  'utah': fetchUtahCameras,
+  'iceland': fetchIcelandCameras,
+  'taiwan': fetchTaiwanCameras,
+  'thailand': fetchThailandCameras,
+  'asia-live': fetchAsiaLiveCameras,
+  'newzealand': fetchNewZealandCameras,
+  'oregon': fetchOregonCameras,
+  'michigan': fetchMichiganCameras,
+  'latam-live': fetchLatamLiveCameras,
+  'africa-live': fetchAfricaLiveCameras,
+  'europe-live': fetchEuropeLiveCameras,
 };
 
 // Determine which regions to fetch based on viewport bounds
@@ -430,8 +470,14 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   if (lat > 24 && lat < 49 && lng > -85 && lng < -66) regions.push('us-east');
   // US-West
   if (lat > 24 && lat < 49 && lng > -125 && lng < -100) regions.push('us-west');
+  // Utah (UDOT) — explicit, since us-west only covers WA + CA
+  if (lat > 36.9 && lat < 42.1 && lng > -114.2 && lng < -108.9) regions.push('utah');
+  // Oregon (ODOT) — explicit, since us-west only covers WA + CA
+  if (lat > 41.9 && lat < 46.3 && lng > -124.6 && lng < -116.4) regions.push('oregon');
   // US-Central
   if (lat > 24 && lat < 49 && lng > -105 && lng < -80) regions.push('us-central');
+  // Michigan (MDOT) — explicit, since us-central only covers Illinois
+  if (lat > 41.6 && lat < 48.3 && lng > -90.5 && lng < -82.1) regions.push('michigan');
   // Canada
   if (lat > 42 && lat < 70 && lng > -141 && lng < -52) regions.push('canada');
   // Europe
@@ -447,9 +493,11 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   const inGermany = lat > 47 && lat < 55.1 && lng > 5.8 && lng < 15.1;
   const inFrance = lat > 42.3 && lat < 51.1 && lng > -5 && lng < 8.3;
   const inSpain = lat > 27 && lat < 43.8 && lng > -18.2 && lng < 4.4;
-  const inPoland = lat > 49.0 && lat < 54.8 && lng > 14.1 && lng < 24.1;
+  const inPoland = lat > 49.0 && lat < 55.0 && lng > 14.1 && lng < 24.1;
+  const inFinland = lat > 59.5 && lat < 70.1 && lng > 20 && lng < 31.6;
+  const inIceland = lat > 63.0 && lat < 67.0 && lng > -25.0 && lng < -13.0;
   const inBalkans = inBulgaria || inGreece || inSerbia || inMacedonia || inRomania || inTurkey;
-  const inWesternEurope = inItaly || inCzechia || inSlovakia || inGermany || inFrance || inSpain || inPoland;
+  const inWesternEurope = inItaly || inCzechia || inSlovakia || inGermany || inFrance || inSpain || inPoland || inFinland || inIceland;
 
   if (lat > 35 && lat < 72 && lng > -11 && lng < 40 && !inBalkans && !inWesternEurope) {
     regions.push('europe');
@@ -467,6 +515,8 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   if (inFrance) regions.push('france');
   if (inSpain) regions.push('spain');
   if (inPoland) regions.push('poland');
+  if (inFinland) regions.push('finland');
+  if (inIceland) regions.push('iceland');
 
   // Middle East
   const inMiddleEast = lat > 29 && lat < 34.5 && lng > 34 && lng < 36.5;
@@ -475,10 +525,32 @@ function getRegionsForBounds(lat: number, lng: number, radius: number): string[]
   // Japan
   if (lat > 24 && lat < 46 && lng > 122 && lng < 154) regions.push('japan');
 
+  // Hong Kong
+  if (lat > 22.1 && lat < 22.6 && lng > 113.8 && lng < 114.4) regions.push('hongkong');
+
+  // Taiwan
+  if (lat > 21.9 && lat < 25.3 && lng > 119.5 && lng < 122.1) regions.push('taiwan');
+
+  // Thailand — mainland through the Gulf islands
+  if (lat > 5.5 && lat < 20.5 && lng > 97.3 && lng < 105.7) regions.push('thailand');
+
+  // Asia live webcams — spans West Asia (Turkey / Levant / Gulf) through Japan and Indonesia
+  if (lat > -11 && lat < 46 && lng > 25 && lng < 155) regions.push('asia-live');
+
   // Asia (includes Middle East, SE Asia, overriding parts of china but that's ok they can both load)
   if ((lat > -10 && lat < 60 && lng > 60 && lng < 150)) regions.push('asia');
   // Australia explicitly
   if (lat > -45 && lat < -10 && lng > 110 && lng < 155) regions.push('asia');
+  // New Zealand (NZTA)
+  if (lat > -47.5 && lat < -34 && lng > 166 && lng < 179) regions.push('newzealand');
+
+  // Live webcams for regions with no traffic-authority feed of their own
+  // Latin America + Caribbean (incl. Bermuda at 32.3N)
+  if (lat > -56 && lat < 33 && lng > -119 && lng < -34) regions.push('latam-live');
+  // Africa (Cape Verde in the west through Seychelles in the east)
+  if (lat > -35 && lat < 36 && lng > -26 && lng < 57) regions.push('africa-live');
+  // European gaps (Azores in the west through northern Norway)
+  if (lat > 35 && lat < 72 && lng > -32 && lng < 32) regions.push('europe-live');
 
   return regions.length > 0 ? regions : ['uk', 'us-east']; // Default fallback
 }
